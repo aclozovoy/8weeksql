@@ -49,6 +49,36 @@ VALUES
   ('10', '104', '1', 'null', 'null', '2020-01-11 18:34:49'),
   ('10', '104', '1', '2, 6', '1, 4', '2020-01-11 18:34:49');
 
+-- ADD RATINGS TO TABLE (CREATE NEW TABLE SO OLD QUERIES STILL RUN)
+DROP TABLE IF EXISTS customer_orders_w_ratings;
+CREATE TABLE customer_orders_w_ratings (
+  "order_id" INTEGER,
+  "customer_id" INTEGER,
+  "pizza_id" INTEGER,
+  "exclusions" VARCHAR(4),
+  "extras" VARCHAR(4),
+  "order_time" TIMESTAMP,
+  "rating" FLOAT
+);
+
+INSERT INTO customer_orders_w_ratings
+  ("order_id", "customer_id", "pizza_id", "exclusions", "extras", "order_time","rating")
+VALUES
+  ('1', '101', '1', '', '', '2020-01-01 18:05:02',3),
+  ('2', '101', '1', '', '', '2020-01-01 19:00:52',4),
+  ('3', '102', '1', '', '', '2020-01-02 23:51:23',1),
+  ('3', '102', '2', '', NULL, '2020-01-02 23:51:23',2),
+  ('4', '103', '1', '4', '', '2020-01-04 13:23:46',5),
+  ('4', '103', '1', '4', '', '2020-01-04 13:23:46',2),
+  ('4', '103', '2', '4', '', '2020-01-04 13:23:46',3),
+  ('5', '104', '1', 'null', '1', '2020-01-08 21:00:29',4),
+  ('6', '101', '2', 'null', 'null', '2020-01-08 21:03:13',NULL),
+  ('7', '105', '2', 'null', '1', '2020-01-08 21:20:29',4),
+  ('8', '102', '1', 'null', 'null', '2020-01-09 23:54:33',5),
+  ('9', '103', '1', '4', '1, 5', '2020-01-10 11:22:59',NULL),
+  ('10', '104', '1', 'null', 'null', '2020-01-11 18:34:49',5),
+  ('10', '104', '1', '2, 6', '1, 4', '2020-01-11 18:34:49',2);
+
 
 DROP TABLE IF EXISTS runner_orders;
 CREATE TABLE runner_orders (
@@ -123,9 +153,9 @@ VALUES
   
   
   
-  
   -------- PROBLEMS --------
-  -- A PIZZA METRICS
+  -------- PROBLEMS --------
+  -- A. PIZZA METRICS
 -- 1. How many pizzas were ordered?
 SELECT
 	COUNT(*)
@@ -479,7 +509,7 @@ SELECT
 	cte.runner_id,
     cte.count,
     cte2.count,
-    CAST(cte2.count AS DECIMAL(9,2))/CAST(cte.count AS DECIMAL(9,2)) AS megan_is_cool
+    CAST(cte2.count AS DECIMAL(9,2))/CAST(cte.count AS DECIMAL(9,2))
 FROM cte
 LEFT JOIN cte2
 	ON cte.runner_id = cte2.runner_id;
@@ -627,14 +657,61 @@ LEFT JOIN exclusions_list2 AS exc
 -- D. PRICING AND RATINGS
 
 -- 1. If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes - how much money has Pizza Runner made so far if there are no delivery fees?
+WITH cte AS (
+SELECT
+  	*,
+	CASE
+    	WHEN pn.pizza_name = 'Meatlovers' THEN 12
+        WHEN pn.pizza_name = 'Vegetarian' THEN 10
+        ELSE 0
+        END AS price
+FROM pizza_runner.customer_orders AS co
+LEFT JOIN pizza_runner.runner_orders AS ro
+	ON co.order_id = ro.order_id
+LEFT JOIN pizza_runner.pizza_names AS pn
+	ON co.pizza_id = pn.pizza_id
+WHERE ro.cancellation NOT LIKE '%Cancellation%' OR
+  	ro.cancellation IS NULL
+)
 
+SELECT
+	SUM(price) AS sum_of_price
+FROM cte;
 
 -- 2. What if there was an additional $1 charge for any pizza extras?
         --Add cheese is $1 extra
-        
+WITH cte AS (
+SELECT
+  	*,
+	CASE
+    	WHEN pn.pizza_name = 'Meatlovers' THEN 12
+        WHEN pn.pizza_name = 'Vegetarian' THEN 10
+        ELSE 0
+        END AS price
+FROM pizza_runner.customer_orders AS co
+LEFT JOIN pizza_runner.runner_orders AS ro
+	ON co.order_id = ro.order_id
+LEFT JOIN pizza_runner.pizza_names AS pn
+	ON co.pizza_id = pn.pizza_id
+WHERE ro.cancellation NOT LIKE '%Cancellation%' OR
+  	ro.cancellation IS NULL
+),
+cte2 AS (
+SELECT
+  	*,
+  	CASE
+  		WHEN cte.extras LIKE '%4' THEN (cte.price + 1)
+  		ELSE cte.price
+  		END AS price_w_cheese
+FROM cte
+)
+
+SELECT
+	SUM(cte2.price_w_cheese) AS sum_of_price
+FROM cte2;       
         
 -- 3. The Pizza Runner team now wants to add an additional ratings system that allows customers to rate their runner, how would you design an additional table for this new dataset - generate a schema for this new table and insert your own data for ratings for each successful customer order between 1 to 5.
-
+SELECT * FROM pizza_runner.customer_orders_w_ratings;
 
 -- 4. Using your newly generated table - can you join all of the information together to form a table which has the following information for successful deliveries?
         --customer_id
@@ -647,6 +724,80 @@ LEFT JOIN exclusions_list2 AS exc
         --Delivery duration
         --Average speed
         --Total number of pizzas
-        
-        
+
+
+WITH cte AS (
+SELECT
+  co.customer_id,
+  co.order_id,
+  ro.runner_id,
+  co.rating,
+  co.order_time,
+  TO_TIMESTAMP(ro.pickup_time,'YYYY-MM-DD HH24:MI:SS') AS pickup_time,
+  CAST(REPLACE(ro.distance,'km','') AS REAL) AS distance_clean,
+  CAST(LEFT(ro.duration,2) AS REAL) AS duration_clean
+FROM pizza_runner.customer_orders_w_ratings AS co
+LEFT JOIN pizza_runner.runner_orders AS ro
+ 	ON co.order_id = ro.order_id
+WHERE ro.cancellation NOT LIKE '%Cancellation%' OR
+  	ro.cancellation IS NULL
+),
+cte2 AS (
+SELECT
+  	*,
+	to_char(cte.pickup_time - cte.order_time, 'MI') AS minutes_to_pickup,
+  	(distance_clean/duration_clean) AS ave_speed__km_per_min
+FROM cte
+),
+cte3 AS (
+SELECT
+  	co.order_id,
+  	COUNT(*) AS number_of_pizzas_in_order
+FROM pizza_runner.customer_orders_w_ratings AS co
+GROUP BY co.order_id
+)
+
+
+SELECT *
+FROM cte2
+LEFT JOIN cte3
+	ON cte2.order_id = cte3.order_id;
+
 -- 5. If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre traveled - how much money does Pizza Runner have left over after these deliveries?
+
+WITH cte AS (
+SELECT
+  co.customer_id,
+  co.order_id,
+  ro.runner_id,
+  co.rating,
+  co.order_time,
+  co.pizza_id,
+  pn.pizza_name,
+  TO_TIMESTAMP(ro.pickup_time,'YYYY-MM-DD HH24:MI:SS') AS pickup_time,
+  CAST(REPLACE(ro.distance,'km','') AS REAL) AS distance_clean,
+  CAST(LEFT(ro.duration,2) AS REAL) AS duration_clean
+FROM pizza_runner.customer_orders_w_ratings AS co
+LEFT JOIN pizza_runner.runner_orders AS ro
+ 	ON co.order_id = ro.order_id
+LEFT JOIN pizza_runner.pizza_names AS pn
+  	ON co.pizza_id = pn.pizza_id
+WHERE ro.cancellation NOT LIKE '%Cancellation%' OR
+  	ro.cancellation IS NULL
+),
+cte2 AS (
+SELECT
+  	*,
+	to_char(cte.pickup_time - cte.order_time, 'MI') AS minutes_to_pickup,
+  	(distance_clean/duration_clean) AS ave_speed__km_per_min,
+  	CASE WHEN cte.pizza_name = 'Meatlovers' THEN 12 
+  		WHEN cte.pizza_name = 'Vegetarian' THEN 10
+  		ELSE 0 END AS price
+FROM cte
+)
+
+SELECT
+	*,
+    CAST(price - 0.3*distance_clean AS DECIMAL(9,2)) AS profit
+FROM cte2;
+
