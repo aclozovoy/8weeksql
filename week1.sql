@@ -1,8 +1,8 @@
-Week 1
+Week 1 - Danny's Diner
 https://8weeksqlchallenge.com/case-study-1/
 
 
----------- QUESTIONS -----------
+---------- SETUP -----------
 
 CREATE SCHEMA dannys_diner;
 SET search_path = dannys_diner;
